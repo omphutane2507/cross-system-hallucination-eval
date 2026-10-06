@@ -1,0 +1,19 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Executables & large binaries
+*.exe
+scripts/*.exe
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS & IDE metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
