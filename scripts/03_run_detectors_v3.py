@@ -1,24 +1,15 @@
 """
-Step 3 (v3): Full experiment runner.
+Step 3 (final, platform-agnostic): Full experiment runner, GPU-only.
 
-What's new vs v2:
-  1. Explicit CUDA diagnostics printed at the top (so you immediately see
-     if your GPU wasn't detected, and why).
-  2. SYSTEM_LABEL: tag every result row with which machine produced it
-     (e.g. "RTX3050", "Colab-T4", "CPU-only"). Set this before each run.
-  3. MAX_SAMPLES = None runs on the FULL cleaned dataset. Set to an int
-     (e.g. 300) to subsample for a quick test run first.
-  4. Third detector added: a lightweight SelfCheckGPT-style self-consistency
-     check. It generates K stochastic summaries of the source with a small
-     local model, then checks whether each sentence of the summary being
-     evaluated is supported (via NLI entailment) by at least one of those
-     samples. Low average support -> flagged as hallucinated.
-  5. Retrieval threshold sweep kept from v2.
+Works unmodified on Google Colab, Kaggle Notebooks, or any machine with
+a GPU. Set SYSTEM_LABEL manually before each run to match the platform:
+    "Colab-T4"     when running on Google Colab
+    "Kaggle-P100"  when running on Kaggle with a P100
+    "Kaggle-T4x2"  when running on Kaggle with dual T4s (use device 0)
 
-Recommended usage:
-  - First run with MAX_SAMPLES = 50 to sanity check everything works and
-    time one full pass, THEN switch to None (full dataset) or a larger
-    number once you know how long it takes on your hardware.
+CPU pass is intentionally skipped -- CPU baseline data was already
+collected locally on the RTX3050 (SelfCheck-style takes ~40s/sample on
+CPU, not worth repeating on a free, time-limited cloud session).
 """
 
 import os
@@ -34,14 +25,14 @@ from sentence_transformers import SentenceTransformer, util
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 # ============================================================
-# CONFIG -- change these per run
+# CONFIG -- change SYSTEM_LABEL before each run on a new platform
 # ============================================================
-SYSTEM_LABEL = "RTX3050"          # change to "Colab-T4" / "CPU-only" etc. per machine
-MAX_SAMPLES = None                  # start small; set to None for full dataset
+SYSTEM_LABEL = "Colab-T4"           # <-- EDIT THIS per platform, see docstring above
+MAX_SAMPLES = None                   # full dataset; set to an int to subsample for a quick test
 RETRIEVAL_THRESHOLDS = [0.55, 0.65, 0.75, 0.85, 0.90]
-SELFCHECK_NUM_SAMPLES = 3          # how many stochastic summaries to generate per source
-SELFCHECK_THRESHOLD = 0.5          # avg entailment below this -> flagged hallucinated
-GENERATOR_MODEL = "sshleifer/distilbart-cnn-12-6"  # small, ~300MB summarization model
+SELFCHECK_NUM_SAMPLES = 3
+SELFCHECK_THRESHOLD = 0.5
+GENERATOR_MODEL = "sshleifer/distilbart-cnn-12-6"
 # ============================================================
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "faithbench_clean.csv")
@@ -56,20 +47,19 @@ def print_cuda_diagnostics():
     print(f"System label for this run : {SYSTEM_LABEL}")
     print(f"PyTorch version           : {torch.__version__}")
     print(f"CUDA available            : {torch.cuda.is_available()}")
-    print(f"CUDA version (torch built): {torch.version.cuda}")
     if torch.cuda.is_available():
         print(f"GPU device name           : {torch.cuda.get_device_name(0)}")
         total_mem = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
         print(f"GPU total memory          : {total_mem:.2f} GB")
+        print(f"NOTE: confirm SYSTEM_LABEL above matches this GPU before trusting results.")
     else:
-        print("No GPU detected. If you expect one, your torch install is")
-        print("likely CPU-only. Fix with:")
-        print("  pip uninstall torch -y")
-        print("  pip install torch --index-url https://download.pytorch.org/whl/cu121")
+        print("WARNING: No GPU detected. On Colab: Runtime -> Change runtime type -> GPU.")
+        print("On Kaggle: Settings (right panel) -> Accelerator -> GPU.")
     print("=" * 60 + "\n")
 
 
-AVAILABLE_DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+# GPU-only: skip CPU pass intentionally (see module docstring above).
+AVAILABLE_DEVICES = ["cuda"] if torch.cuda.is_available() else ["cpu"]
 
 
 def reset_memory(device):
@@ -149,8 +139,6 @@ def run_retrieval_detector(df, device, threshold):
 # Detector C: SelfCheckGPT-style self-consistency
 # ---------------------------------------------------------------------
 def split_sentences(text):
-    # Simple sentence splitter -- good enough for this purpose, avoids
-    # pulling in a heavier NLP library just for sentence boundaries.
     parts = [s.strip() for s in text.replace("!", ".").replace("?", ".").split(".")]
     return [p for p in parts if len(p) > 0]
 
@@ -216,7 +204,8 @@ def main():
     print_cuda_diagnostics()
 
     if not os.path.exists(DATA_PATH):
-        print(f"Missing {DATA_PATH}. Run 02_prepare_dataset.py first.")
+        print(f"Missing {DATA_PATH}. Run 02_prepare_dataset.py first (or upload")
+        print("your already-prepared data/faithbench_clean.csv to this environment).")
         return
 
     df = pd.read_csv(DATA_PATH).dropna(subset=["source", "summary"])
@@ -258,9 +247,6 @@ def main():
     result_df.to_csv(out_path, index=False)
     print(f"\nSaved results to {out_path}")
     print(result_df.to_string(index=False))
-    print("\nRun this same script on each machine/system with a different")
-    print("SYSTEM_LABEL set at the top, then combine all the output CSVs")
-    print("(they share the same columns) into one master table for the paper.")
 
 
 if __name__ == "__main__":
