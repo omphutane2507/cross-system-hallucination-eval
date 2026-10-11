@@ -27,7 +27,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score
 # ============================================================
 # CONFIG -- change SYSTEM_LABEL before each run on a new platform
 # ============================================================
-SYSTEM_LABEL = "Colab-T4"           # <-- EDIT THIS per platform, see docstring above
+SYSTEM_LABEL = "Kaggle-P100"           # <-- EDIT THIS per platform, see docstring above
 MAX_SAMPLES = None                   # full dataset; set to an int to subsample for a quick test
 RETRIEVAL_THRESHOLDS = [0.55, 0.65, 0.75, 0.85, 0.90]
 SELFCHECK_NUM_SAMPLES = 3
